@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["...", "chromium", "glib", "nss", "nspr", "atk", "at-spi2-atk", "cups", "dbus", "expat", "libdrm", "xorg.libxcb", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxkbcommon", "pango", "cairo", "alsa-lib", "at-spi2-core", "gtk3"]
+
+[phases.install]
+cmds = ["npm install", "npm install puppeteer"]
+
+[start]
+cmd = "npm run server"
+
+[variables]
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+PUPPETEER_EXECUTABLE_PATH = "/nix/store/*/bin/chromium"

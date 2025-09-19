@@ -1,0 +1,45 @@
+{
+  "merge": true,
+  "todos": [
+    {
+      "id": "analyze-export-system",
+      "content": "Analyze current export system and identify root causes of Elementor JSON validation failures",
+      "status": "completed"
+    },
+    {
+      "id": "fix-json-schema", 
+      "content": "Fix Elementor JSON schema compliance to prevent 'Invalid Content In File' errors",
+      "status": "completed"
+    },
+    {
+      "id": "fix-counting",
+      "content": "Implement proper Elementor semantic counting (sections, elements, images)",
+      "status": "completed"
+    },
+    {
+      "id": "add-schema-validation",
+      "content": "Add JSON schema validation with AJV before download",
+      "status": "completed"
+    },
+    {
+      "id": "fix-progress-bar",
+      "content": "Fix progress bar clamping at 100% and implement proper unit tracking",
+      "status": "completed"  // ✅ Just completed this!
+    },
+    {
+      "id": "fix-verified-status",
+      "content": "Implement true 'Verified' status based on schema validation + dry-run import",
+      "status": "in_progress"  // ✅ MOVING TO TASK 6
+    },
+    {
+      "id": "single-source-truth",  // TASK 7
+      "content": "Ensure single source of truth IR for both preview and export",
+      "status": "pending"
+    },
+    {
+      "id": "fix-file-size",  // TASK 8
+      "content": "Fix file size issues by properly embedding assets and kit structure",
+      "status": "pending"
+    }
+  ]
+} 

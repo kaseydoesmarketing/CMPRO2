@@ -1,0 +1,361 @@
+.preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.preview-modal {
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 25px 100px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 1200px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 30px 40px 20px;
+  border-bottom: 1px solid #e0e6ed;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.preview-info h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.preview-info p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 16px;
+}
+
+.preview-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 12px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.preview-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.preview-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  gap: 20px;
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid #e0e6ed;
+  border-top: 4px solid #8b45c4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.preview-loading p {
+  color: #64748b;
+  font-size: 18px;
+  margin: 0;
+}
+
+.preview-iframe-container {
+  height: 500px;
+  overflow: auto;
+  background: #f8f9fa;
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.preview-footer {
+  padding: 30px 40px;
+  border-top: 1px solid #e0e6ed;
+  background: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.fidelity-report {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e0e6ed;
+  width: 100%;
+}
+
+.fidelity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.fidelity-header h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.fidelity-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fidelity-badge.passed {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.fidelity-badge.failed {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.fidelity-scores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.score-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.score-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.score-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.fidelity-recommendation {
+  padding: 12px;
+  background: #f0f9ff;
+  border-radius: 6px;
+  border-left: 3px solid #0ea5e9;
+}
+
+.fidelity-recommendation p {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
+.preview-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.preview-stats {
+  display: flex;
+  gap: 40px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-number {
+  font-size: 28px;
+  font-weight: 700;
+  color: #8b45c4;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 2px solid #d1d5db;
+  color: #6b7280;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 16px;
+}
+
+.btn-secondary:hover {
+  border-color: #9ca3af;
+  color: #374151;
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #8b45c4 0%, #667eea 100%);
+  border: none;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 15px rgba(139, 69, 196, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(139, 69, 196, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-warning {
+  background: #f59e0b;
+  border: none;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: not-allowed;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.6;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+.btn-warning:hover {
+  opacity: 0.8;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .preview-modal {
+    margin: 10px;
+    max-width: none;
+    width: calc(100% - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  
+  .preview-header {
+    padding: 20px 24px 16px;
+  }
+  
+  .preview-info h2 {
+    font-size: 24px;
+  }
+  
+  .preview-info p {
+    font-size: 14px;
+  }
+  
+  .preview-footer {
+    padding: 20px 24px;
+    flex-direction: column;
+    gap: 24px;
+  }
+  
+  .preview-stats {
+    gap: 24px;
+  }
+  
+  .stat-number {
+    font-size: 24px;
+  }
+  
+  .preview-actions {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .btn-secondary,
+  .btn-primary {
+    flex: 1;
+    justify-content: center;
+  }
+}

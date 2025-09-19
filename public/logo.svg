@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#3B82F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06B6D4;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Outer circle -->
+  <circle cx="50" cy="50" r="45" stroke="url(#logoGradient)" stroke-width="2" fill="none" opacity="0.5"/>
+  
+  <!-- Inner hexagon -->
+  <path d="M50 15 L70 28 L70 52 L50 65 L30 52 L30 28 Z" 
+        fill="none" 
+        stroke="url(#logoGradient)" 
+        stroke-width="3"
+        filter="url(#glow)"/>
+  
+  <!-- Center C -->
+  <path d="M45 35 Q35 35 35 45 Q35 55 45 55 L45 50 Q40 50 40 45 Q40 40 45 40 Z" 
+        fill="url(#logoGradient)"
+        filter="url(#glow)"/>
+  
+  <!-- M shape -->
+  <path d="M55 55 L55 40 L58 45 L61 40 L64 45 L67 40 L67 55" 
+        fill="none"
+        stroke="url(#logoGradient)"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        filter="url(#glow)"/>
+  
+  <!-- Bottom scanning line -->
+  <line x1="25" y1="75" x2="75" y2="75" 
+        stroke="#FFC107" 
+        stroke-width="2" 
+        stroke-linecap="round"
+        opacity="0.8">
+    <animate attributeName="x1" values="25;75;25" dur="3s" repeatCount="indefinite"/>
+    <animate attributeName="x2" values="75;25;75" dur="3s" repeatCount="indefinite"/>
+  </line>
+</svg>
