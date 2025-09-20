@@ -1,0 +1,74 @@
+{
+  "version": "0.4",
+  "title": "Golden Fixture",
+  "type": "page",
+  "content": [
+    {
+      "id": "sec00001",
+      "elType": "section",
+      "isInner": false,
+      "settings": {
+        "content_width": "boxed",
+        "layout": "boxed",
+        "structure": "100",
+        "gap": "no",
+        "html_tag": "section"
+      },
+      "elements": [
+        {
+          "id": "col00001",
+          "elType": "column",
+          "isInner": false,
+          "settings": {
+            "_column_size": 100,
+            "_inline_size": null,
+            "padding": {
+              "unit": "px",
+              "top": "0",
+              "right": "0",
+              "bottom": "0",
+              "left": "0",
+              "isLinked": true
+            }
+          },
+          "elements": [
+            {
+              "id": "wid00001",
+              "elType": "widget",
+              "widgetType": "heading",
+              "settings": {
+                "title": "Hello from Golden Template",
+                "header_size": "h2",
+                "tag": "h2",
+                "align": "center"
+              },
+              "elements": []
+            },
+            {
+              "id": "wid00002",
+              "elType": "widget",
+              "widgetType": "text-editor",
+              "settings": {
+                "editor": "<p>This golden template captures the canonical Elementor layout used for schema derivation.</p>",
+                "align": "center"
+              },
+              "elements": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "page_settings": {
+    "template": "elementor_canvas",
+    "custom_css": "",
+    "custom_colors": [],
+    "custom_fonts": []
+  },
+  "metadata": {
+    "created_at": "2024-01-01T00:00:00.000Z",
+    "source_url": "https://fixtures.local/golden",
+    "generator": "CloneMentorPro",
+    "elementor_version": "3.16.0"
+  }
+}

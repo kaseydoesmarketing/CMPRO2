@@ -17,17 +17,23 @@ class VisualWebScraper {
       if (this.browser) {
         await this.browser.close().catch(() => {}); // Force close if stuck
       }
+      const launchArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-web-security',
+        '--allow-running-insecure-content'
+      ];
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.http_proxy;
+      if (proxyUrl) {
+        launchArgs.push(`--proxy-server=${proxyUrl}`);
+      }
       this.browser = await puppeteer.launch({
         headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-web-security',
-          '--allow-running-insecure-content'
-        ],
+        args: launchArgs,
         executablePath: process.env.CHROMIUM_PATH || undefined,
-        protocolTimeout: 120000
+        protocolTimeout: 120000,
+        ignoreHTTPSErrors: true
       });
     }
   }

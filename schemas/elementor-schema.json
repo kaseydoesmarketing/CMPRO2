@@ -1,0 +1,168 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://clonementor.pro/schemas/elementor-template.json",
+  "title": "CloneMentorPro Elementor Template",
+  "description": "Derived schema from the golden Elementor export used as the source of truth for validation.",
+  "type": "object",
+  "required": ["version", "title", "type", "content", "page_settings", "metadata"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "0.4"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": ["page", "section", "popup", "header", "footer", "single", "archive"]
+    },
+    "content": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/section"
+      }
+    },
+    "page_settings": {
+      "type": "object",
+      "required": ["template"],
+      "properties": {
+        "template": {
+          "type": "string",
+          "minLength": 1
+        },
+        "custom_css": {
+          "type": "string",
+          "default": ""
+        },
+        "custom_colors": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "default": []
+        },
+        "custom_fonts": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["created_at", "source_url", "generator"],
+      "properties": {
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_url": {
+          "type": "string"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "elementor_version": {
+          "type": "string"
+        },
+        "stats": {
+          "type": "object",
+          "required": ["sections", "columns", "widgets", "images"],
+          "properties": {
+            "sections": { "type": "integer", "minimum": 0 },
+            "columns": { "type": "integer", "minimum": 0 },
+            "widgets": { "type": "integer", "minimum": 0 },
+            "images": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "fallback_used": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "definitions": {
+    "elementId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{8}$"
+    },
+    "widget": {
+      "type": "object",
+      "required": ["id", "elType", "widgetType", "settings", "elements"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/definitions/elementId" },
+        "elType": { "const": "widget" },
+        "widgetType": {
+          "type": "string",
+          "enum": ["heading", "text-editor", "image", "button"]
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "elements": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/widget" },
+          "default": []
+        }
+      }
+    },
+    "column": {
+      "type": "object",
+      "required": ["id", "elType", "settings", "elements"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/definitions/elementId" },
+        "elType": { "const": "column" },
+        "isInner": { "type": "boolean" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "_column_size": { "type": "number", "minimum": 0, "maximum": 100 },
+            "_inline_size": { "type": ["number", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "elements": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/widget" }
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "required": ["id", "elType", "settings", "elements"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/definitions/elementId" },
+        "elType": { "const": "section" },
+        "isInner": { "type": "boolean" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "structure": { "type": "string" },
+            "layout": { "type": "string" },
+            "content_width": { "type": "string" },
+            "gap": { "type": "string" },
+            "html_tag": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "elements": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/column" }
+        }
+      }
+    }
+  }
+}
