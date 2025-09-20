@@ -1,153 +1,56 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+import ajvErrors from 'ajv-errors';
 
-const ajv = new Ajv({ allErrors: true });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.resolve(__dirname, '../../..');
+const SCHEMA_PATH = path.resolve(ROOT_DIR, 'schemas', 'elementor-schema.json');
+const schemaJson = JSON.parse(fs.readFileSync(SCHEMA_PATH, 'utf8'));
+
+const ajv = new Ajv({
+  allErrors: true,
+  strict: false,
+  allowUnionTypes: true
+});
 addFormats(ajv);
+ajvErrors(ajv);
 
-// Simplified Elementor JSON Schema for validation
-const elementorSchema = {
-  type: 'object',
-  required: ['version', 'title', 'type', 'content'],
-  properties: {
-    version: { 
-      type: 'string', 
-      pattern: '^0\\.4$'
-    },
-    title: { 
-      type: 'string',
-      minLength: 1
-    },
-    type: { 
-      type: 'string', 
-      enum: ['page', 'section', 'header', 'footer', 'single', 'archive']
-    },
-    content: {
-      type: 'array',
-      minItems: 1,
-      items: {
-        type: 'object',
-        required: ['id', 'elType', 'settings', 'elements'],
-        properties: {
-          id: { 
-            type: 'string', 
-            pattern: '^[a-z0-9]{8}$'
-          },
-          elType: { 
-            type: 'string', 
-            enum: ['section']
-          },
-          settings: { type: 'object' },
-          elements: {
-            type: 'array',
-            minItems: 1,
-            items: {
-              type: 'object',
-              required: ['id', 'elType', 'settings', 'elements'],
-              properties: {
-                id: { 
-                  type: 'string', 
-                  pattern: '^[a-z0-9]{8}$'
-                },
-                elType: { 
-                  type: 'string', 
-                  enum: ['column']
-                },
-                settings: { type: 'object' },
-                elements: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    required: ['id', 'elType', 'widgetType', 'settings'],
-                    properties: {
-                      id: { 
-                        type: 'string', 
-                        pattern: '^[a-z0-9]{8}$'
-                      },
-                      elType: { 
-                        type: 'string', 
-                        enum: ['widget']
-                      },
-                      widgetType: { type: 'string' },
-                      settings: { type: 'object' }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    page_settings: {
-      type: 'object',
-      properties: {
-        template: { type: 'string' },
-        custom_css: { type: 'string' },
-        custom_colors: { type: 'array' },
-        custom_fonts: { type: 'array' }
-      }
-    },
-    metadata: {
-      type: 'object',
-      properties: {
-        created_at: { type: 'string' },
-        source_url: { type: 'string' },
-        cloned_by: { type: 'string' }
-      }
-    }
-  },
-  additionalProperties: false
-};
+export const validateElementorTemplate = ajv.compile(schemaJson);
 
-// Compile the schema validator
-export const validateElementorTemplate = ajv.compile(elementorSchema);
-
-// Helper function to get detailed validation errors
 export function getValidationErrors(errors) {
   if (!errors) return [];
-  
-  return errors.map(error => {
-    const path = error.instancePath || 'root';
-    const message = error.message || 'Invalid value';
-    
-    return {
-      path,
-      message,
-      keyword: error.keyword,
-      params: error.params
-    };
-  });
+  return errors.map(err => ({
+    path: err.instancePath || '/',
+    message: err.message || 'Invalid value',
+    keyword: err.keyword,
+    params: err.params
+  }));
 }
 
-// Function to validate and enhance template
-export function validateAndEnhanceTemplate(template) {
-  const isValid = validateElementorTemplate(template);
-  const errors = getValidationErrors(validateElementorTemplate.errors);
-  
-  return {
-    isValid,
-    errors,
-    enhancedTemplate: isValid ? enhanceTemplateStructure(template) : template
-  };
-}
-
-// Function to enhance template structure for better Elementor compatibility
 function enhanceTemplateStructure(template) {
-  const enhanced = JSON.parse(JSON.stringify(template));
-  
-  // Ensure required properties exist
-  if (!enhanced.version) enhanced.version = "0.4";
-  if (!enhanced.type) enhanced.type = "page";
-  if (!enhanced.page_settings) enhanced.page_settings = {};
-  if (!enhanced.page_settings.template) enhanced.page_settings.template = "elementor_canvas";
-  
-  // Add proper metadata
-  enhanced.metadata = {
-    ...enhanced.metadata,
-    created_at: new Date().toISOString(),
-    elementor_version: '3.16.0',
-    export_date: new Date().toISOString()
+  const clone = JSON.parse(JSON.stringify(template));
+  if (!clone.page_settings) {
+    clone.page_settings = { template: 'elementor_canvas', custom_css: '', custom_colors: [], custom_fonts: [] };
+  }
+  if (!clone.page_settings.template) {
+    clone.page_settings.template = 'elementor_canvas';
+  }
+  clone.metadata = {
+    ...(clone.metadata || {}),
+    created_at: clone.metadata?.created_at || new Date().toISOString(),
+    generator: clone.metadata?.generator || 'CloneMentorPro',
+    elementor_version: clone.metadata?.elementor_version || '3.16.0'
   };
-  
-  return enhanced;
-} 
+  return clone;
+}
+
+export function validateAndEnhanceTemplate(template) {
+  const enhanced = enhanceTemplateStructure(template);
+  const isValid = validateElementorTemplate(enhanced);
+  const errors = getValidationErrors(validateElementorTemplate.errors);
+  return { isValid, errors, enhancedTemplate: enhanced };
+}

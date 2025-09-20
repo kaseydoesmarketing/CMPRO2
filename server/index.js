@@ -55,13 +55,15 @@ app.use('/api/stripe', stripeRouter);
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'CloneMentorPro', ts: Date.now() }));
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-  const id = randomUUID();
-  console.error('[ERR]', id, err);
-  res.status(500).json({
+app.use((err, req, res, _next) => {
+  const status = err?.status || err?.statusCode || 500;
+  const traceId = req?.id || randomUUID();
+  const code = typeof err?.code === 'string' ? err.code : status >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST';
+  console.error('[ERR]', traceId, err);
+  res.status(status).json({
     ok: false,
-    code: 'INTERNAL_ERROR',
-    traceId: id,
+    code,
+    traceId,
     message: err?.message || 'Server error',
     stack: process.env.NODE_ENV !== 'production' ? String(err?.stack || '') : undefined,
   });

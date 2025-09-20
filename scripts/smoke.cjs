@@ -4,10 +4,27 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
+const Ajv = require('ajv');
+const addFormats = require('ajv-formats');
 
 const API = process.env.API || 'http://localhost:5020';
 const TARGET_URL = process.env.TARGET_URL || 'https://example.com';
-const MODE = process.env.MODE || 'template';
+const MODE = (process.env.MODE || 'both').toLowerCase();
+
+const schemaPath = path.resolve(process.cwd(), 'schemas', 'elementor-schema.json');
+const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+const ajv = new Ajv({ allErrors: true, strict: false, allowUnionTypes: true });
+addFormats(ajv);
+const validateTemplate = ajv.compile(schema);
+
+function ensureArtifactsDir(dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function writeJson(filePath, data) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
 
 function fetchJson(url, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -68,12 +85,13 @@ function fetchBuffer(url, opts = {}) {
   });
 }
 
-async function runOnce(iter) {
+async function runOnce(iteration) {
   const artifactsDir = path.resolve(process.cwd(), 'artifacts', 'smoke');
-  fs.mkdirSync(artifactsDir, { recursive: true });
+  ensureArtifactsDir(artifactsDir);
 
   const health = await fetchJson(`${API}/api/health`);
   if (!health || health.ok !== true) throw new Error('Health not ok');
+  writeJson(path.join(artifactsDir, 'health.json'), health);
 
   const scan = await fetchJson(`${API}/api/clone/scan`, {
     method: 'POST',
@@ -82,21 +100,46 @@ async function runOnce(iter) {
   if (!scan || scan.ok !== true || scan.converter !== 'ElementorConverter') {
     throw new Error('Scan failed or wrong converter');
   }
+  writeJson(path.join(artifactsDir, 'scan.json'), scan);
 
-  const out = await fetchBuffer(`${API}/api/clone/download`, {
-    method: 'POST',
-    body: JSON.stringify({ url: TARGET_URL, mode: MODE })
-  });
-  const outPath = path.join(artifactsDir, MODE === 'kit' ? 'template.zip' : 'template.json');
-  fs.writeFileSync(outPath, out);
+  const runTemplate = MODE === 'template' || MODE === 'both';
+  const runKit = MODE === 'kit' || MODE === 'both';
 
-  if (MODE === 'template') {
-    const json = JSON.parse(out.toString('utf8'));
-    if (!json.version || !json.content) throw new Error('Template missing version/content');
-  } else {
-    if (scan.counts && scan.counts.images > 0 && out.length < 100 * 1024) {
-      throw new Error(`ZIP too small (${out.length} bytes) despite images present`);
+  let templateJson = null;
+
+  if (runTemplate) {
+    const templateBuffer = await fetchBuffer(`${API}/api/clone/download`, {
+      method: 'POST',
+      body: JSON.stringify({ url: TARGET_URL, mode: 'template' })
+    });
+    fs.writeFileSync(path.join(artifactsDir, 'template.json'), templateBuffer);
+
+    templateJson = JSON.parse(templateBuffer.toString('utf8'));
+    const valid = validateTemplate(templateJson);
+    writeJson(path.join(artifactsDir, 'ajv.log'), {
+      ok: valid,
+      errors: validateTemplate.errors || null
+    });
+    if (!valid) {
+      const firstError = (validateTemplate.errors || [])[0];
+      const message = firstError ? `${firstError.instancePath || '/'} ${firstError.message}` : 'AJV validation failed';
+      throw new Error(message);
     }
+  }
+
+  if (runKit) {
+    const kitBuffer = await fetchBuffer(`${API}/api/clone/download`, {
+      method: 'POST',
+      body: JSON.stringify({ url: TARGET_URL, mode: 'kit' })
+    });
+    fs.writeFileSync(path.join(artifactsDir, 'kit.zip'), kitBuffer);
+    if ((scan.counts?.images || 0) > 0 && kitBuffer.length < 100 * 1024) {
+      throw new Error(`ZIP too small (${kitBuffer.length} bytes) despite images present`);
+    }
+  }
+
+  if (!runTemplate) {
+    writeJson(path.join(artifactsDir, 'ajv.log'), { ok: null, skipped: true });
   }
 
   return true;
@@ -123,4 +166,4 @@ async function runOnce(iter) {
   } else {
     console.log('✅✅ Smoke passed twice consecutively');
   }
-})(); 
+})();
