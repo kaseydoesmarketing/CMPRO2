@@ -1,6 +1,89 @@
 import puppeteer from 'puppeteer';
 import * as cheerio from 'cheerio';
 
+// ==================== BROWSER POOL MANAGEMENT ====================
+const BROWSER_POOL = {
+  browsers: [],
+  maxBrowsers: 3,
+  activeSessions: 0,
+
+  async getBrowser() {
+    // Reuse existing browser if available
+    for (const browser of this.browsers) {
+      if (browser && browser.isConnected()) {
+        this.activeSessions++;
+        return browser;
+      }
+    }
+
+    // Create new browser if under limit
+    if (this.browsers.length < this.maxBrowsers) {
+      console.log(`🚀 Creating browser instance ${this.browsers.length + 1}/${this.maxBrowsers}`);
+      const browser = await puppeteer.launch({
+        headless: 'new',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-web-security',
+          '--allow-running-insecure-content',
+          '--disable-features=VizDisplayCompositor',
+          '--disable-background-timer-throttling',
+          '--disable-renderer-backgrounding'
+        ],
+        executablePath: process.env.CHROMIUM_PATH || undefined,
+        protocolTimeout: 120000,
+        ignoreDefaultArgs: ['--disable-extensions'],
+      });
+
+      this.browsers.push(browser);
+      this.activeSessions++;
+      return browser;
+    }
+
+    // Wait for available browser (max 30 seconds)
+    console.log('⏳ Browser pool full, waiting for available browser...');
+    const startWait = Date.now();
+    while (Date.now() - startWait < 30000) {
+      for (const browser of this.browsers) {
+        if (browser && browser.isConnected()) {
+          this.activeSessions++;
+          return browser;
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    throw new Error('Browser pool timeout - no browsers available');
+  },
+
+  releaseBrowser() {
+    if (this.activeSessions > 0) {
+      this.activeSessions--;
+    }
+  },
+
+  async cleanup() {
+    console.log('🧹 Cleaning up browser pool...');
+    for (const browser of this.browsers) {
+      if (browser && browser.isConnected()) {
+        await browser.close().catch(() => {});
+      }
+    }
+    this.browsers = [];
+    this.activeSessions = 0;
+  }
+};
+
+// Cleanup on process exit
+process.on('exit', () => BROWSER_POOL.cleanup());
+process.on('SIGINT', async () => {
+  await BROWSER_POOL.cleanup();
+  process.exit(0);
+});
+
+// ==================== END BROWSER POOL ====================
+
 class VisualWebScraper {
   constructor() {
     this.browser = null;
@@ -12,24 +95,8 @@ class VisualWebScraper {
   }
 
   async initialize() {
-    if (!this.browser || !this.browser.isConnected()) {
-      console.log('Browser not connected or not initialized - launching new instance');
-      if (this.browser) {
-        await this.browser.close().catch(() => {}); // Force close if stuck
-      }
-      this.browser = await puppeteer.launch({
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-web-security',
-          '--allow-running-insecure-content'
-        ],
-        executablePath: process.env.CHROMIUM_PATH || undefined,
-        protocolTimeout: 120000
-      });
-    }
+    // Use browser pool instead of instance management
+    this.browser = await BROWSER_POOL.getBrowser();
   }
 
   async scrapeVisualLayout(url, progressCallback) {
@@ -48,9 +115,9 @@ class VisualWebScraper {
       
       progressCallback?.({ phase: 'loading_page', progress: 8 });
       
-      // Navigate and wait for page to fully load (with one retry)
+      // Navigate with frame detachment recovery
       let lastError = null;
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           await page.goto(url, { 
             waitUntil: ['networkidle0', 'domcontentloaded'],
@@ -60,8 +127,32 @@ class VisualWebScraper {
           break;
         } catch (e) {
           lastError = e;
-          if (attempt === 2) throw e;
-          await new Promise(r => setTimeout(r, 1000));
+          console.log(`Navigation attempt ${attempt} failed:`, e.message);
+          
+          // Check if this is a frame detachment error
+          if (e.message.includes('detached Frame') || e.message.includes('Target closed')) {
+            console.log('Frame detachment detected - reinitializing browser');
+            
+            // Close the broken page
+            await page.close().catch(() => {});
+            
+            // Force reinitialize browser context
+            if (this.browser) {
+              await this.browser.close().catch(() => {});
+              this.browser = null;
+            }
+            
+            // Reinitialize and create new page
+            await this.initialize();
+            page = await this.browser.newPage();
+            page.setDefaultNavigationTimeout(90000);
+            page.setDefaultTimeout(90000);
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setViewport({ width: 1200, height: 800 });
+          }
+          
+          if (attempt === 3) throw e;
+          await new Promise(r => setTimeout(r, 2000));
         }
       }
       
@@ -127,9 +218,10 @@ class VisualWebScraper {
       progressCallback?.({ phase: 'validating_structure', progress: 88 });
       
       await page.close();
-      
+      BROWSER_POOL.releaseBrowser(); // Release browser back to pool
+
       progressCallback?.({ phase: 'scraping_complete', progress: 95 }); // Never exceed 95% here
-      
+
       return {
         url,
         pageInfo,
@@ -138,9 +230,10 @@ class VisualWebScraper {
         assets,
         timestamp: new Date().toISOString()
       };
-      
+
     } catch (error) {
       await page.close().catch(() => {});
+      BROWSER_POOL.releaseBrowser(); // Release browser even on error
       const err = new Error(`Scrape failed: ${error.message}. Hint: If this persists, set CHROMIUM_PATH or increase timeouts.`);
       err.cause = error;
       throw err;
@@ -298,17 +391,41 @@ class VisualWebScraper {
         };
       };
 
+      // AGGRESSIVE TEXT CONTENT EXTRACTION - Get all text nodes recursively
+      const extractTextContent = (element) => {
+        // Get all text nodes, even deeply nested ones
+        const textNodes = [];
+        const walker = document.createTreeWalker(
+          element,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode: (node) => {
+              // Only accept non-empty text nodes
+              const text = node.textContent.trim();
+              return text.length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            }
+          }
+        );
+
+        let node;
+        while (node = walker.nextNode()) {
+          textNodes.push(node.textContent.trim());
+        }
+
+        return textNodes.join(' ');
+      };
+
       const mapElement = (element, depth = 0) => {
-        if (depth > 25) return null; // Increased depth for more comprehensive capture
-        
+        if (depth > 50) return null; // Further increased depth for comprehensive capture
+
         const tagName = element.tagName?.toLowerCase();
         if (!tagName || ['script', 'style', 'meta', 'link', 'title', 'head'].includes(tagName)) {
           return null;
         }
-        
+
         const layout = getComputedLayout(element);
         const children = [];
-        
+
         // Capture direct text content (not just for leaf nodes)
         let directTextContent = '';
         for (let node of element.childNodes) {
@@ -317,6 +434,9 @@ class VisualWebScraper {
           }
         }
         directTextContent = directTextContent.trim();
+
+        // ENHANCED: Also capture ALL nested text using aggressive extraction
+        const allTextContent = extractTextContent(element);
         
         // Get innerHTML for elements that might contain rich content
         let innerHTML = '';
@@ -331,9 +451,17 @@ class VisualWebScraper {
         }
         
         // Process visible elements and important structural elements even if not visible
-        const isImportantStructural = ['body', 'html', 'head', 'form', 'table', 'thead', 'tbody', 'tr'].includes(tagName);
+        const isImportantStructural = [
+          'body', 'html', 'head', 'form', 'table', 'thead', 'tbody', 'tr',
+          'header', 'footer', 'main', 'nav', 'section', 'article', 'aside',
+          'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+          'ul', 'ol', 'li', 'img', 'a', 'button', 'input', 'textarea',
+          'select', 'form', 'figure', 'figcaption', 'blockquote'
+        ].includes(tagName);
         const isVisible = layout.width > 0 && layout.height > 0 && layout.visibility !== 'hidden' && layout.display !== 'none';
-        const shouldProcess = isVisible || isImportantStructural || innerHTML.trim().length > 0 || directTextContent.length > 0;
+        const hasContent = innerHTML.trim().length > 0 || directTextContent.length > 0;
+        const hasChildren = element.children.length > 0;
+        const shouldProcess = isVisible || isImportantStructural || hasContent || hasChildren;
         
         if (shouldProcess) {
           for (const child of element.children) {
@@ -348,6 +476,7 @@ class VisualWebScraper {
             className: element.className,
             id: element.id,
             textContent: directTextContent,
+            allTextContent: allTextContent, // ENHANCED: All nested text content
             innerHTML: innerHTML,
             outerHTML: element.outerHTML, // Capture complete HTML
             attributes: {
@@ -576,8 +705,18 @@ class VisualWebScraper {
 
   async buildVisualStructureMap(page, responsiveLayouts) {
     // Analyze the responsive layouts to build a unified structure map
-    const desktopLayout = responsiveLayouts.desktop;
-    
+    const desktopLayout = responsiveLayouts?.desktop;
+
+    // Safety check: If desktop layout is missing, return minimal structure
+    if (!desktopLayout) {
+      console.warn('⚠️ Desktop layout missing - returning fallback structure');
+      return {
+        completeHTML: '<html><body><p>Unable to capture page structure</p></body></html>',
+        styles: '',
+        fallbackMode: true
+      };
+    }
+
     // Use the structure from the new enhanced capture
     const structure = desktopLayout.structure;
     
@@ -796,10 +935,9 @@ class VisualWebScraper {
   }
 
   async close() {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
+    // Browsers are managed by the pool, so just release the reference
+    BROWSER_POOL.releaseBrowser();
+    this.browser = null;
   }
 }
 
