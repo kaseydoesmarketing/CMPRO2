@@ -99,7 +99,7 @@ docker-compose up -d
 
 # Or build manually
 docker build -t clonementor-pro .
-docker run -p 5000:5000 clonementor-pro
+docker run -p 5020:5020 clonementor-pro
 ```
 
 #### Manual Deployment
@@ -109,7 +109,7 @@ docker run -p 5000:5000 clonementor-pro
 npm run build
 
 # Start production server
-NODE_ENV=production PORT=5000 npm run server
+NODE_ENV=production PORT=5020 npm run server
 ```
 
 ## 📚 API Documentation
@@ -187,7 +187,7 @@ Check server status.
 
 ```bash
 # Server Configuration
-PORT=5000
+PORT=5020
 NODE_ENV=development
 
 # Stripe Configuration (Future)
