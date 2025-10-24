@@ -605,6 +605,7 @@ class ElementorConverter {
     // Create comprehensive IR that includes all captured data
     const ir = {
       html: visualData.visualStructure?.completeHTML || '',
+      inlineStyledHTML: visualData.visualStructure?.inlineStyledHTML || visualData.visualStructure?.completeHTML || '',  // ENHANCED: Inline styled HTML for accurate preview
       structure: visualData.visualStructure?.structure || null,
       styles: visualData.visualStructure?.styles || '',
       responsiveLayouts: visualData.responsiveLayouts || {},

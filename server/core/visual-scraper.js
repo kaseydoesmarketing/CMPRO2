@@ -515,14 +515,82 @@ class VisualWebScraper {
       // Capture the complete structure
       const structure = mapElement(document.body);
       const allStyles = getAllStyles();
-      
+
       // Also capture the complete page HTML as fallback
       const completeHTML = document.documentElement.outerHTML;
-      
+
+      // ENHANCED: Generate HTML with inline styles for accurate preview
+      const generateInlineStyledHTML = () => {
+        const clonedDoc = document.documentElement.cloneNode(true);
+
+        // CRITICAL: Remove all scripts, event handlers, and unsafe content FIRST
+        const scriptsToRemove = clonedDoc.querySelectorAll('script, noscript');
+        scriptsToRemove.forEach(el => el.remove());
+
+        // Remove all inline event handlers (onclick, onload, etc.)
+        const allElements = clonedDoc.querySelectorAll('*');
+        allElements.forEach(el => {
+          // Remove event handler attributes
+          Array.from(el.attributes).forEach(attr => {
+            if (attr.name.startsWith('on')) {
+              el.removeAttribute(attr.name);
+            }
+          });
+          // Remove javascript: hrefs
+          if (el.getAttribute('href')?.startsWith('javascript:')) {
+            el.removeAttribute('href');
+          }
+        });
+
+        // Now apply computed styles as inline styles to each element
+        const elementsToStyle = clonedDoc.querySelectorAll('*');
+        const originalElements = document.querySelectorAll('*');
+
+        elementsToStyle.forEach((element, index) => {
+          if (index < originalElements.length) {
+            const originalElement = originalElements[index];
+            const computedStyle = window.getComputedStyle(originalElement);
+
+            // Critical layout properties that must be preserved
+            const criticalProps = [
+              'display', 'position', 'width', 'height', 'max-width', 'max-height', 'min-width', 'min-height',
+              'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+              'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+              'flex-direction', 'flex-wrap', 'justify-content', 'align-items', 'align-content', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis',
+              'grid-template-columns', 'grid-template-rows', 'grid-gap', 'grid-column', 'grid-row',
+              'float', 'clear', 'overflow', 'overflow-x', 'overflow-y',
+              'background-color', 'background-image', 'background-size', 'background-position', 'background-repeat',
+              'color', 'font-size', 'font-family', 'font-weight', 'font-style', 'line-height', 'text-align',
+              'border', 'border-radius', 'box-shadow',
+              'opacity', 'visibility', 'z-index',
+              'transform', 'transform-origin', 'transition'
+            ];
+
+            let inlineStyle = '';
+            criticalProps.forEach(prop => {
+              const value = computedStyle.getPropertyValue(prop);
+              if (value && value !== 'none' && value !== 'normal' && value !== 'auto' && value !== 'initial') {
+                inlineStyle += `${prop}: ${value}; `;
+              }
+            });
+
+            if (inlineStyle) {
+              const existingStyle = element.getAttribute('style') || '';
+              element.setAttribute('style', existingStyle + ' ' + inlineStyle);
+            }
+          }
+        });
+
+        return clonedDoc.outerHTML;
+      };
+
+      const inlineStyledHTML = generateInlineStyledHTML();
+
       return {
         structure,
         styles: allStyles,
         completeHTML: completeHTML,
+        inlineStyledHTML: inlineStyledHTML,  // NEW: HTML with computed inline styles
         documentTitle: document.title,
         documentURL: window.location.href
       };
