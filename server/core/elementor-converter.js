@@ -510,24 +510,34 @@ class ElementorConverter {
   determineElementorElementType(element) {
     const { tagName, layout, children } = element;
 
-    // CONTENT TAGS - Always treat as widgets, never as sections/columns
-    const contentTags = ['p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'button', 'input', 'textarea', 'label', 'strong', 'em', 'i', 'b', 'u', 'small', 'mark', 'del', 'ins', 'sub', 'sup', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li'];
-    if (contentTags.includes(tagName)) {
-      return 'widget';
-    }
-
-    // Section logic - major layout containers (NOT simple content divs)
+    // PRIORITY 1: Section logic - major layout containers
+    // These MUST be checked FIRST before content tags
     if (tagName === 'body' || tagName === 'section' || tagName === 'header' || tagName === 'footer' ||
         tagName === 'main' || tagName === 'article' || tagName === 'aside') {
       return 'section';
     }
 
-    // Column logic - containers within sections (only for structural tags like div, nav)
-    if (children.length > 0 && (tagName === 'div' || tagName === 'nav')) {
-      return 'column';
+    // PRIORITY 2: Column logic - containers with children or flexbox/grid layout
+    // Check for structural containers BEFORE treating as widgets
+    if (tagName === 'div' || tagName === 'nav') {
+      // Containers with children become columns
+      if (children && children.length > 0) {
+        return 'column';
+      }
+      // Containers with flexbox/grid layout become columns
+      if (layout && (layout.display === 'flex' || layout.display === 'grid')) {
+        return 'column';
+      }
     }
 
-    // Widget logic - content elements (default fallback)
+    // PRIORITY 3: Content tags - ONLY checked after section/column logic
+    // These are always widgets, never structural containers
+    const contentTags = ['p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'button', 'input', 'textarea', 'label', 'strong', 'em', 'i', 'b', 'u', 'small', 'mark', 'del', 'ins', 'sub', 'sup', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li'];
+    if (contentTags.includes(tagName)) {
+      return 'widget';
+    }
+
+    // PRIORITY 4: Default fallback for unknown tags
     return 'widget';
   }
   
