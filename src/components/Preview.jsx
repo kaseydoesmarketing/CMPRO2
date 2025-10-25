@@ -21,20 +21,32 @@ const Preview = ({ isVisible, scannedData, onDownload, onClose }) => {
   }, [isVisible, scannedData]);
 
   const generatePreviewHTML = (data) => {
-    // CRITICAL FIX: Check for HTML in multiple possible locations
+    // CRITICAL FIX: Check for inlineStyledHTML FIRST (preserves layout structure)
     let html = null;
-    
-    if (data?.html) {
+
+    // PRIORITY 1: inlineStyledHTML with layout preservation (inline styles applied)
+    if (data?.inlineStyledHTML) {
+      html = data.inlineStyledHTML;
+      console.log('✅ Found inlineStyledHTML in data.inlineStyledHTML (layout preserved)');
+    } else if (data?.visualStructure?.inlineStyledHTML) {
+      html = data.visualStructure.inlineStyledHTML;
+      console.log('✅ Found inlineStyledHTML in data.visualStructure.inlineStyledHTML (layout preserved)');
+    } else if (data?.responsiveLayouts?.desktop?.inlineStyledHTML) {
+      html = data.responsiveLayouts.desktop.inlineStyledHTML;
+      console.log('✅ Found inlineStyledHTML in data.responsiveLayouts.desktop.inlineStyledHTML (layout preserved)');
+    }
+    // FALLBACK: Plain HTML without layout preservation (will show flat list)
+    else if (data?.html) {
       html = data.html;
-      console.log('✅ Found HTML in data.html');
+      console.warn('⚠️ Using plain HTML - layout structure may not be preserved');
     } else if (data?.visualStructure?.completeHTML) {
       html = data.visualStructure.completeHTML;
-      console.log('✅ Found HTML in data.visualStructure.completeHTML');
+      console.warn('⚠️ Using completeHTML - layout structure may not be preserved');
     } else if (data?.responsiveLayouts?.desktop?.completeHTML) {
       html = data.responsiveLayouts.desktop.completeHTML;
-      console.log('✅ Found HTML in data.responsiveLayouts.desktop.completeHTML');
+      console.warn('⚠️ Using desktop completeHTML - layout structure may not be preserved');
     }
-    
+
     if (!html) {
       console.warn('⚠️ No HTML content found for preview');
       return `<div class="preview-error" style="padding: 20px; text-align: center; font-family: Arial, sans-serif; color: #666;">
@@ -43,22 +55,36 @@ const Preview = ({ isVisible, scannedData, onDownload, onClose }) => {
         <p>The Elementor template has still been generated and can be downloaded.</p>
       </div>`;
     }
-    
+
+    // Extract captured CSS styles
+    let capturedStyles = '';
+    if (data?.styles) {
+      capturedStyles = data.styles;
+      console.log('✅ Found CSS styles in data.styles', capturedStyles.length, 'chars');
+    } else if (data?.css) {
+      capturedStyles = data.css;
+      console.log('✅ Found CSS styles in data.css', capturedStyles.length, 'chars');
+    }
+
     // Clean and prepare HTML for preview
-    
+
     // Remove scripts and potentially harmful content
     html = html.replace(/<script[^>]*>.*?<\/script>/gis, '');
     html = html.replace(/<link[^>]*>/gi, '');
     html = html.replace(/on\w+="[^"]*"/gi, '');
-    
-    // Add our preview styles
+
+    // Add captured styles PLUS our preview wrapper styles
     const previewStyles = `
       <style>
+        /* Captured website styles */
+        ${capturedStyles}
+      </style>
+      <style>
+        /* Preview wrapper styles */
         * { box-sizing: border-box; }
-        body { 
-          margin: 0; 
-          padding: 20px; 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        body {
+          margin: 0;
+          padding: 20px;
           background: #f8f9fa;
         }
         .preview-container {
@@ -70,7 +96,7 @@ const Preview = ({ isVisible, scannedData, onDownload, onClose }) => {
           box-shadow: 0 10px 40px rgba(0,0,0,0.1);
         }
         img { max-width: 100%; height: auto; }
-        a { pointer-events: none; }
+        a { pointer-events: none; cursor: default; }
         .preview-watermark {
           position: fixed;
           top: 20px;
@@ -85,7 +111,7 @@ const Preview = ({ isVisible, scannedData, onDownload, onClose }) => {
         }
       </style>
     `;
-    
+
     return `
       ${previewStyles}
       <div class="preview-watermark">CloneMentor Pro Preview</div>
