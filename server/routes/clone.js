@@ -90,14 +90,32 @@ router.post('/scan', async (req, res, next) => {
       assets: ir?.assets || {},
       pageInfo: ir?.pageInfo || {},
       assetSession: assetSession,
-      downloadedAssets: downloadedAssets
+      downloadedAssets: downloadedAssets,
+      // CRITICAL: Include assetUrls for frontend to pass to download endpoint
+      assetUrls: downloadedAssets ? {
+        images: downloadedAssets.images?.map(img => ({
+          original: img.originalUrl,
+          local: `/api/assets/${assetSession}/images/${img.filename}`,
+          filename: img.filename
+        })) || [],
+        fonts: downloadedAssets.fonts?.map(font => ({
+          original: font.originalUrl,
+          local: `/api/assets/${assetSession}/fonts/${font.filename}`,
+          filename: font.filename
+        })) || [],
+        css: downloadedAssets.css?.map(css => ({
+          original: css.originalUrl,
+          local: `/api/assets/${assetSession}/css/${css.filename}`,
+          filename: css.filename
+        })) || []
+      } : null
     });
   } catch (e) { next(e); }
 });
 
 router.post('/download', async (req, res, next) => {
   try {
-    const { mode = 'template', url = '', html = '', template } = req.body || {};
+    const { mode = 'template', url = '', html = '', template, assetSession, assetUrls } = req.body || {};
     const conv = makeElementorConverter();
 
     // If template is provided directly, use it; otherwise re-scan from url/html
@@ -110,7 +128,53 @@ router.post('/download', async (req, res, next) => {
       ir = typeof conv.toIR === 'function' ? await conv.toIR(source) : await conv.buildIntermediateRepresentation(source);
     }
 
-    const out = await conv.exportTemplate(ir, mode);
+    // CRITICAL FIX: Build asset mapping from assetUrls if provided
+    let assetMapping = null;
+    if (assetSession && assetUrls) {
+      // Convert assetUrls format to mapping format expected by converter
+      assetMapping = {
+        sessionId: assetSession,
+        images: (assetUrls.images || []).map(img => ({
+          originalUrl: img.original,
+          absoluteUrl: img.original,
+          localUrl: img.local || `/api/assets/${assetSession}/images/${img.filename || ''}`
+        })),
+        fonts: (assetUrls.fonts || []).map(font => ({
+          originalUrl: font.original,
+          localUrl: font.local || `/api/assets/${assetSession}/fonts/${font.filename || ''}`
+        })),
+        css: (assetUrls.css || []).map(css => ({
+          originalUrl: css.original,
+          localUrl: css.local || `/api/assets/${assetSession}/css/${css.filename || ''}`
+        }))
+      };
+      console.log(`✅ Using asset mapping for session ${assetSession}: ${assetMapping.images.length} images`);
+    } else if (assetSession) {
+      // Try to get asset info from asset manager if available
+      const assetManager = req.app.locals.assetManager;
+      if (assetManager) {
+        try {
+          const sessionInfo = await assetManager.getSession(assetSession);
+          if (sessionInfo && sessionInfo.assets) {
+            assetMapping = {
+              sessionId: assetSession,
+              images: (sessionInfo.assets.images || []).map(img => ({
+                originalUrl: img.originalUrl,
+                absoluteUrl: img.absoluteUrl,
+                localUrl: `/api/assets/${assetSession}/images/${img.filename}`
+              })),
+              fonts: [],
+              css: []
+            };
+            console.log(`✅ Built asset mapping from session: ${assetMapping.images.length} images`);
+          }
+        } catch (err) {
+          console.warn('⚠️  Could not retrieve asset session info:', err.message);
+        }
+      }
+    }
+
+    const out = await conv.exportTemplate(ir, mode, assetMapping);
 
     if (out.kind === 'json') {
       const json = JSON.parse(Buffer.isBuffer(out.bytes) ? out.bytes.toString('utf8') : String(out.bytes));

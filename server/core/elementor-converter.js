@@ -25,8 +25,43 @@ class ElementorConverter {
     return result;
   }
 
-  async convertVisualToElementor(visualData, verificationReport) {
+  /**
+   * Check if an element is button-like (CTA, call-to-action, etc.)
+   * @param {object} element - Element to check
+   * @returns {boolean} True if element appears to be a button
+   */
+  isButtonLike(element) {
+    const className = element.className || '';
+    const tagName = element.tagName || '';
+    const layout = element.layout || {};
+    
+    // Check for button-like class names
+    const buttonClasses = ['btn', 'button', 'cta', 'call-to-action', 'action', 'submit'];
+    const hasButtonClass = buttonClasses.some(btnClass => 
+      className.toLowerCase().includes(btnClass)
+    );
+    
+    // Check for button-like styling
+    const hasButtonStyling = (
+      layout.backgroundColor && layout.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+      layout.backgroundColor !== "transparent"
+    ) || (
+      layout.borderRadius && parseInt(layout.borderRadius) > 0
+    ) || (
+      layout.padding && (
+        parseInt(layout.padding.top) > 10 || 
+        parseInt(layout.padding.bottom) > 10
+      )
+    );
+    
+    return hasButtonClass || hasButtonStyling;
+  }
+
+  async convertVisualToElementor(visualData, verificationReport, assetMapping = null) {
     console.log(' ElementorConverter.convertVisualToElementor called with comprehensive data');
+    
+    // Store asset mapping for URL rewriting
+    this.assetMapping = assetMapping || {};
     
     // Use the structure from IR if available, otherwise fallback to simple template
     const irStructure = visualData.visualStructure?.structure;
@@ -269,11 +304,35 @@ class ElementorConverter {
 
     // 3. SPACING - Margin and padding
     if (layout.margin) {
-      widget.settings._margin = this.parsePaddingString(layout.margin);
+      // Handle both object format {top, right, bottom, left} and string format
+      if (typeof layout.margin === 'object' && !Array.isArray(layout.margin)) {
+        widget.settings._margin = {
+          unit: 'px',
+          top: parseInt(layout.margin.top) || '',
+          right: parseInt(layout.margin.right) || '',
+          bottom: parseInt(layout.margin.bottom) || '',
+          left: parseInt(layout.margin.left) || '',
+          isLinked: false
+        };
+      } else {
+        widget.settings._margin = this.parsePaddingString(String(layout.margin));
+      }
     }
 
     if (layout.padding) {
-      widget.settings._padding = this.parsePaddingString(layout.padding);
+      // Handle both object format {top, right, bottom, left} and string format
+      if (typeof layout.padding === 'object' && !Array.isArray(layout.padding)) {
+        widget.settings._padding = {
+          unit: 'px',
+          top: parseInt(layout.padding.top) || '',
+          right: parseInt(layout.padding.right) || '',
+          bottom: parseInt(layout.padding.bottom) || '',
+          left: parseInt(layout.padding.left) || '',
+          isLinked: false
+        };
+      } else {
+        widget.settings._padding = this.parsePaddingString(String(layout.padding));
+      }
     }
 
     // 4. BORDERS - Width, color, radius
@@ -341,13 +400,13 @@ class ElementorConverter {
   convertStructureToElementor(structure) {
     if (!structure) return [];
 
-    const convertElement = (element) => {
+    const convertElement = (element, parentType = null) => {
       if (!element) return null;
 
       const { tagName, layout, children, textContent, innerHTML, attributes } = element;
 
-      // Determine Elementor element type
-      const elementType = this.determineElementorElementType(element);
+      // Determine Elementor element type (pass parent type for better context)
+      const elementType = this.determineElementorElementType(element, parentType);
 
       switch (elementType) {
         case 'section':
@@ -355,7 +414,7 @@ class ElementorConverter {
           const sectionImages = this.extractAllImages(element);
 
           // Sections must contain columns
-          const sectionChildren = children?.map(convertElement).filter(Boolean) || [];
+          const sectionChildren = children?.map(child => convertElement(child, 'section')).filter(Boolean) || [];
           const columns = sectionChildren.length > 0 ? sectionChildren : [
             {
               id: this.generateElementId(),
@@ -413,7 +472,7 @@ class ElementorConverter {
           };
           
         case 'column':
-          const columnElements = children?.map(convertElement).filter(Boolean) || [];
+          const columnElements = children?.map(child => convertElement(child, 'column')).filter(Boolean) || [];
           // Ensure all column elements are widgets
           const widgetElements = columnElements.map(child => {
             if (child && child.elType !== 'widget') {
@@ -507,7 +566,7 @@ class ElementorConverter {
     return [rootElement].filter(Boolean);
   }
   
-  determineElementorElementType(element) {
+  determineElementorElementType(element, parentType = null) {
     const { tagName, layout, children } = element;
 
     // PRIORITY 1: Section logic - major layout containers
@@ -520,12 +579,38 @@ class ElementorConverter {
     // PRIORITY 2: Column logic - containers with children or flexbox/grid layout
     // Check for structural containers BEFORE treating as widgets
     if (tagName === 'div' || tagName === 'nav') {
+      // If parent is a section, this is likely a column
+      if (parentType === 'section') {
+        return 'column';
+      }
       // Containers with children become columns
       if (children && children.length > 0) {
-        return 'column';
+        // Check if children are mostly content widgets (not structural)
+        const contentTagCount = children.filter(c => {
+          const childTag = c.tagName || '';
+          return ['p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'button', 'input', 'textarea', 'label', 'strong', 'em', 'i', 'b', 'u', 'small', 'mark', 'del', 'ins', 'sub', 'sup', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li'].includes(childTag);
+        }).length;
+        
+        // If most children are content widgets, this is a column
+        if (contentTagCount > 0 && contentTagCount >= children.length * 0.5) {
+          return 'column';
+        }
+        
+        // If it has structural children (div, section, etc.), it's a column
+        const structuralChildren = children.filter(c => {
+          const childTag = c.tagName || '';
+          return ['div', 'section', 'header', 'footer', 'main', 'article', 'aside', 'nav'].includes(childTag);
+        });
+        if (structuralChildren.length > 0) {
+          return 'column';
+        }
       }
       // Containers with flexbox/grid layout become columns
       if (layout && (layout.display === 'flex' || layout.display === 'grid')) {
+        return 'column';
+      }
+      // Large containers (likely layout containers) become columns
+      if (layout && layout.width && parseInt(layout.width) > 200) {
         return 'column';
       }
     }
@@ -640,7 +725,7 @@ class ElementorConverter {
   }
   
   // Export template method
-  async exportTemplate(ir, mode = "template") {
+  async exportTemplate(ir, mode = "template", assetMapping = null) {
     console.log("🔍 ElementorConverter.exportTemplate called with mode:", mode);
 
     // CRITICAL FIX: Get structure from responsiveLayouts.desktop.structure, not ir.structure
@@ -653,7 +738,7 @@ class ElementorConverter {
       },
       pageInfo: ir.pageInfo || {},
       assets: ir.assets || []
-    }, {});
+    }, {}, assetMapping);
 
     if (mode === "template") {
       const bytes = Buffer.from(JSON.stringify(template, null, 2));
@@ -814,9 +899,32 @@ class ElementorConverter {
     const attributes = element.attributes || {};
     
     if (tagName === 'img') {
+      // CRITICAL FIX: Rewrite image URL to use downloaded asset if available
+      let imageUrl = attributes.src || '';
+      if (imageUrl && this.assetMapping && this.assetMapping.images && this.assetMapping.images.length > 0) {
+        // Find matching downloaded image - try multiple matching strategies
+        const downloadedImage = this.assetMapping.images.find(img => {
+          // Exact match
+          if (img.originalUrl === imageUrl || img.absoluteUrl === imageUrl) return true;
+          // URL path match (for relative URLs)
+          if (imageUrl.includes(img.originalUrl) || img.originalUrl.includes(imageUrl)) return true;
+          // Filename match
+          const imgFilename = imageUrl.split('/').pop().split('?')[0];
+          const assetFilename = img.originalUrl.split('/').pop().split('?')[0];
+          if (imgFilename && assetFilename && imgFilename === assetFilename) return true;
+          return false;
+        });
+        if (downloadedImage && downloadedImage.localUrl) {
+          imageUrl = downloadedImage.localUrl;
+          console.log(`✅ Rewrote image URL: ${attributes.src} → ${imageUrl}`);
+        } else {
+          console.log(`⚠️  No matching asset found for image: ${imageUrl}`);
+        }
+      }
+      
       baseWidget.widgetType = "image";
       baseWidget.settings = {
-        image: attributes.src ? { url: attributes.src, alt: attributes.alt || "" } : "",
+        image: imageUrl ? { url: imageUrl, alt: attributes.alt || "" } : "",
         image_size: "full",
         align: "center"
       };
@@ -845,28 +953,71 @@ class ElementorConverter {
         })
       };
     } else if (tagName === 'a') {
-      baseWidget.widgetType = "button";
-      const layout = element.layout || {};
-      baseWidget.settings = {
-        text: textContent || "Click Here",
-        link: { url: attributes.href || "#", is_external: "", nofollow: "" },
-        align: layout.textAlign || "left",
-        button_type: "default",
-        size: "sm",
-        ...(layout.backgroundColor && layout.backgroundColor !== "rgba(0, 0, 0, 0)" && {
-          button_background_color: layout.backgroundColor
-        }),
-        ...(layout.color && {
-          button_text_color: layout.color
-        }),
-        typography_typography: "custom",
-        ...(layout.fontFamily && {
-          typography_font_family: layout.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
-        }),
-        ...(layout.fontSize && {
-          typography_font_size: { size: parseInt(layout.fontSize) || 16, unit: "px" }
-        })
-      };
+      // CRITICAL FIX: Filter out navigation links - only convert links that are buttons or CTA-like
+      const href = attributes.href || '';
+      const isNavigationLink = href && (
+        href.startsWith('#') || 
+        href.startsWith('/') || 
+        href.includes('page') || 
+        href.includes('category') ||
+        href.includes('tag') ||
+        (element.className && (
+          element.className.includes('nav') || 
+          element.className.includes('menu') ||
+          element.className.includes('navigation')
+        ))
+      );
+      
+      // Skip navigation links - convert to text widget instead
+      if (isNavigationLink && !this.isButtonLike(element)) {
+        // Convert to text widget without link
+        const layout = element.layout || {};
+        baseWidget.widgetType = "text-editor";
+        baseWidget.settings = {
+          editor: textContent || "Text content",
+          align: layout.textAlign || "left",
+          ...(layout.color && layout.color !== "rgb(0, 0, 0)" && {
+            text_color: layout.color
+          }),
+          typography_typography: "custom",
+          ...(layout.fontFamily && {
+            typography_font_family: layout.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
+          }),
+          ...(layout.fontSize && {
+            typography_font_size: { size: parseInt(layout.fontSize) || 16, unit: "px" }
+          }),
+          ...(layout.fontWeight && {
+            typography_font_weight: layout.fontWeight
+          }),
+          ...(layout.lineHeight && {
+            typography_line_height: { size: parseFloat(layout.lineHeight) || 1.5, unit: "em" }
+          })
+        };
+      } else {
+        // Convert button-like links to buttons
+        baseWidget.widgetType = "button";
+        const layout = element.layout || {};
+        baseWidget.settings = {
+          text: textContent || "Click Here",
+          link: { url: href || "#", is_external: "", nofollow: "" },
+          align: layout.textAlign || "left",
+          button_type: "default",
+          size: "sm",
+          ...(layout.backgroundColor && layout.backgroundColor !== "rgba(0, 0, 0, 0)" && {
+            button_background_color: layout.backgroundColor
+          }),
+          ...(layout.color && {
+            button_text_color: layout.color
+          }),
+          typography_typography: "custom",
+          ...(layout.fontFamily && {
+            typography_font_family: layout.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
+          }),
+          ...(layout.fontSize && {
+            typography_font_size: { size: parseInt(layout.fontSize) || 16, unit: "px" }
+          })
+        };
+      }
     } else {
       // Default text widget
       const layout = element.layout || {};

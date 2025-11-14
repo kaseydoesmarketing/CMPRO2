@@ -68,6 +68,9 @@ function Scanner({ url, onComplete }) {
           visualData: response.data.visualData || {}, // CRITICAL: Include visualData for complete theme capture
           verification: response.data.verification,
           metadata: response.data.metadata || {}, // Include full metadata for template generation
+          assetSession: response.data.assetSession, // CRITICAL: Include asset session
+          downloadedAssets: response.data.downloadedAssets, // CRITICAL: Include downloaded assets info
+          assetUrls: response.data.assetUrls, // CRITICAL: Include asset URLs mapping
           stats: {
             elements: response.data.metadata?.elementsCount || 0,
             sections: response.data.metadata?.sectionsCount || 0,
@@ -129,8 +132,11 @@ function Scanner({ url, onComplete }) {
     
     try {
       // Send template to server for validation and proper formatting
+      // CRITICAL: Include asset session and URLs for proper image rewriting
       const response = await axios.post('/api/clone/download', {
         template: elementorData,
+        assetSession: scannedData.assetSession || scannedData.metadata?.assetSession,
+        assetUrls: scannedData.assetUrls || scannedData.downloadedAssets?.assetUrls || scannedData.metadata?.assetUrls,
         filename: `${(scannedData.pageInfo?.title || 'cloned-page').replace(/[^a-z0-9]/gi, '-').toLowerCase()}-elementor-template`
       });
       
