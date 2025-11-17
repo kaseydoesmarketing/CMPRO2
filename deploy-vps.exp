@@ -1,0 +1,84 @@
+#!/usr/bin/expect -f
+# Automated VPS deployment script for build.tightslice.com
+
+set timeout 300
+set password "@Q6rKUU7gW402SPo5+1n"
+set server "72.61.0.118"
+set user "root"
+
+# Build frontend
+puts "🚀 Building frontend..."
+system "npm run build"
+
+# Create deployment package
+puts "📦 Creating deployment package..."
+set timestamp [clock format [clock seconds] -format "%Y%m%d_%H%M%S"]
+system "tar -czf /tmp/cmpro2-$timestamp.tar.gz --exclude='node_modules' --exclude='.git' --exclude='*.log' ."
+
+# Upload to server
+puts "📤 Uploading to VPS..."
+spawn scp -o StrictHostKeyChecking=no /tmp/cmpro2-$timestamp.tar.gz $user@$server:/tmp/
+expect {
+    "password:" {
+        send "$password\r"
+        expect eof
+    }
+    timeout {
+        puts "❌ SCP upload timed out"
+        exit 1
+    }
+}
+
+# Deploy on server
+puts "🚀 Deploying on server..."
+spawn ssh -o StrictHostKeyChecking=no $user@$server
+expect {
+    "password:" {
+        send "$password\r"
+        expect "#"
+
+        send "cd /var/www/clonementorpro\r"
+        expect "#"
+
+        send "mkdir -p backup\r"
+        expect "#"
+
+        send "tar -czf backup/backup_$timestamp.tar.gz * 2>/dev/null || true\r"
+        expect "#"
+
+        send "cd /tmp\r"
+        expect "#"
+
+        send "tar -xzf cmpro2-$timestamp.tar.gz -C /var/www/clonementorpro/\r"
+        expect "#"
+
+        send "cd /var/www/clonementorpro\r"
+        expect "#"
+
+        send "npm ci --production\r"
+        expect {
+            "#" {
+                send "pm2 restart clonementorpro || pm2 start server/index.js --name clonementorpro\r"
+                expect "#"
+            }
+            timeout {
+                puts "⚠️  npm install took longer than expected"
+            }
+        }
+
+        send "pm2 save\r"
+        expect "#"
+
+        send "rm /tmp/cmpro2-$timestamp.tar.gz\r"
+        expect "#"
+
+        send "exit\r"
+    }
+    timeout {
+        puts "❌ SSH connection timed out"
+        exit 1
+    }
+}
+
+puts "✅ Deployment complete!"
+puts "🌐 Visit: http://build.tightslice.com"
