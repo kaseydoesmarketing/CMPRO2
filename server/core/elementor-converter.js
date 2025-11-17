@@ -27,6 +27,7 @@ class ElementorConverter {
 
   /**
    * Check if an element is button-like (CTA, call-to-action, etc.)
+   * Uses precise word-boundary matching to avoid false positives
    * @param {object} element - Element to check
    * @returns {boolean} True if element appears to be a button
    */
@@ -34,34 +35,115 @@ class ElementorConverter {
     const className = element.className || '';
     const tagName = element.tagName || '';
     const layout = element.layout || {};
-    
-    // Check for button-like class names
-    const buttonClasses = ['btn', 'button', 'cta', 'call-to-action', 'action', 'submit'];
-    const hasButtonClass = buttonClasses.some(btnClass => 
-      className.toLowerCase().includes(btnClass)
-    );
-    
-    // Check for button-like styling
-    const hasButtonStyling = (
-      layout.backgroundColor && layout.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-      layout.backgroundColor !== "transparent"
-    ) || (
-      layout.borderRadius && parseInt(layout.borderRadius) > 0
-    ) || (
-      layout.padding && (
-        parseInt(layout.padding.top) > 10 || 
-        parseInt(layout.padding.bottom) > 10
+
+    // FIXED: Use word boundaries to prevent false positives like "distribute", "attribution"
+    const buttonClasses = ['btn', 'button', 'cta', 'call-to-action', 'action', 'submit', 'download'];
+    const hasButtonClass = buttonClasses.some(btnClass => {
+      // Match whole words only using regex word boundaries
+      const regex = new RegExp(`\\b${btnClass.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+      return regex.test(className);
+    });
+
+    // Check for actual button or input[type=submit/button] tags
+    const isButtonTag = tagName === 'button' ||
+                       (tagName === 'input' &&
+                        (element.attributes?.type === 'submit' || element.attributes?.type === 'button'));
+
+    // Check for button-like styling (more strict criteria)
+    const hasStrongButtonStyling = (
+      // Must have background color AND significant padding/border-radius
+      layout.backgroundColor &&
+      layout.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+      layout.backgroundColor !== "transparent" &&
+      (
+        (layout.borderRadius && parseInt(layout.borderRadius) >= 3) ||
+        (layout.padding && (
+          parseInt(layout.padding.top) >= 8 &&
+          parseInt(layout.padding.bottom) >= 8 &&
+          parseInt(layout.padding.left) >= 12 &&
+          parseInt(layout.padding.right) >= 12
+        ))
       )
     );
-    
-    return hasButtonClass || hasButtonStyling;
+
+    return hasButtonClass || isButtonTag || hasStrongButtonStyling;
+  }
+
+  /**
+   * Check if a link is a navigation link (should be filtered out)
+   * Uses precise detection to avoid false positives
+   * @param {object} element - Link element to check
+   * @returns {boolean} True if element is a navigation link
+   */
+  isNavigationLink(element) {
+    const href = element.attributes?.href || '';
+    const className = element.className || '';
+    const textContent = (element.textContent || '').toLowerCase().trim();
+
+    // Empty or placeholder hrefs
+    if (!href || href === '#' || href === 'javascript:void(0)' || href === 'javascript:;') {
+      return true;
+    }
+
+    // Check for navigation-specific class names (word boundaries)
+    const navClasses = ['nav', 'menu', 'navigation', 'navbar', 'header-link', 'footer-link'];
+    const hasNavClass = navClasses.some(navClass => {
+      const regex = new RegExp(`\\b${navClass}\\b`, 'i');
+      return regex.test(className);
+    });
+
+    if (hasNavClass) return true;
+
+    // Check for common navigation text patterns
+    const navTextPatterns = [
+      'home', 'about', 'contact', 'services', 'products', 'blog',
+      'portfolio', 'team', 'careers', 'faq', 'support', 'pricing',
+      'features', 'login', 'sign in', 'register', 'sign up'
+    ];
+
+    const hasNavText = navTextPatterns.some(pattern =>
+      textContent === pattern || textContent.includes(pattern)
+    );
+
+    // Common navigation URL patterns (but exclude obvious CTAs)
+    const navUrlPatterns = [
+      /^\/(about|contact|blog|services|products|team|careers|faq|support)$/i,
+      /^#[a-z-]+$/i, // Hash links like #about, #contact
+      /\/category\//i,
+      /\/tag\//i,
+      /\/archive\//i,
+      /\/page\//i
+    ];
+
+    const hasNavUrl = navUrlPatterns.some(pattern => pattern.test(href));
+
+    // If it has nav text AND nav URL, definitely navigation
+    if (hasNavText && (hasNavUrl || href.startsWith('/'))) {
+      return true;
+    }
+
+    // Just nav class or just nav URL (but not both) - less certain
+    return hasNavClass || hasNavUrl;
   }
 
   async convertVisualToElementor(visualData, verificationReport, assetMapping = null) {
     console.log(' ElementorConverter.convertVisualToElementor called with comprehensive data');
-    
-    // Store asset mapping for URL rewriting
-    this.assetMapping = assetMapping || {};
+
+    // Clear image cache for new page
+    this.clearImageCache();
+
+    // Store asset mapping for URL rewriting with validation
+    try {
+      this.assetMapping = this.validateAssetMapping(assetMapping) || {};
+      if (this.assetMapping && this.assetMapping.images && this.assetMapping.images.length > 0) {
+        console.log(`✅ Asset mapping loaded: ${this.assetMapping.images.length} images available`);
+      } else {
+        console.log('ℹ️  No asset mapping provided - using original image URLs');
+      }
+    } catch (error) {
+      console.error('⚠️  Asset mapping validation failed:', error.message);
+      this.assetMapping = {};
+    }
     
     // Use the structure from IR if available, otherwise fallback to simple template
     const irStructure = visualData.visualStructure?.structure;
@@ -154,15 +236,39 @@ class ElementorConverter {
     };
   }
   
-  // NEW: Extract all images recursively from element tree
-  extractAllImages(element) {
+  /**
+   * Extract all images recursively from element tree
+   * OPTIMIZED: Uses caching and duplicate detection
+   * @param {object} element - Root element to extract images from
+   * @param {boolean} useCache - Whether to use cached results (default: true)
+   * @returns {Array} Array of image elements
+   */
+  extractAllImages(element, useCache = true) {
+    // Use cache if available and requested
+    if (useCache && this._imageCache) {
+      return this._imageCache;
+    }
+
     const images = [];
+    const seenSrcs = new Set(); // Duplicate detection
 
     const traverse = (el, depth = 0) => {
       if (!el || depth > 50) return; // Prevent infinite recursion
 
       // If this element is an image, capture it
       if (el.tagName === 'img') {
+        const src = el.attributes?.src || '';
+
+        // DUPLICATE DETECTION: Skip if we've already seen this exact src
+        if (src && seenSrcs.has(src)) {
+          return;
+        }
+
+        // Mark as seen
+        if (src) {
+          seenSrcs.add(src);
+        }
+
         images.push({
           tagName: 'img',
           attributes: el.attributes || {},
@@ -179,7 +285,134 @@ class ElementorConverter {
     };
 
     traverse(element);
+
+    // Cache the results for future calls
+    if (useCache) {
+      this._imageCache = images;
+    }
+
     return images;
+  }
+
+  /**
+   * Clear the image cache (call when processing a new page)
+   */
+  clearImageCache() {
+    this._imageCache = null;
+  }
+
+  /**
+   * Validate and sanitize asset mapping
+   * Ensures asset mapping has required structure and valid URLs
+   * @param {object} assetMapping - Raw asset mapping to validate
+   * @returns {object|null} Validated asset mapping or null
+   */
+  validateAssetMapping(assetMapping) {
+    if (!assetMapping || typeof assetMapping !== 'object') {
+      return null;
+    }
+
+    const validated = {
+      sessionId: assetMapping.sessionId || null,
+      images: [],
+      fonts: [],
+      css: []
+    };
+
+    // Validate images
+    if (Array.isArray(assetMapping.images)) {
+      validated.images = assetMapping.images.filter(img => {
+        // Must have both original URL and local URL
+        if (!img.originalUrl || !img.localUrl) {
+          console.warn(`⚠️  Skipping invalid image asset: missing URLs`);
+          return false;
+        }
+        // Validate URLs are non-empty strings
+        if (typeof img.originalUrl !== 'string' || typeof img.localUrl !== 'string') {
+          console.warn(`⚠️  Skipping invalid image asset: URLs must be strings`);
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // Validate fonts (optional)
+    if (Array.isArray(assetMapping.fonts)) {
+      validated.fonts = assetMapping.fonts.filter(font =>
+        font.originalUrl && font.localUrl &&
+        typeof font.originalUrl === 'string' &&
+        typeof font.localUrl === 'string'
+      );
+    }
+
+    // Validate CSS (optional)
+    if (Array.isArray(assetMapping.css)) {
+      validated.css = assetMapping.css.filter(css =>
+        css.originalUrl && css.localUrl &&
+        typeof css.originalUrl === 'string' &&
+        typeof css.localUrl === 'string'
+      );
+    }
+
+    return validated;
+  }
+
+  /**
+   * Find matching asset using precise URL comparison
+   * Tries multiple strategies with decreasing precision
+   * @param {string} imageUrl - URL to find in asset mapping
+   * @param {Array} assetImages - Array of downloaded images
+   * @returns {object|null} Matching asset or null
+   */
+  findMatchingAsset(imageUrl, assetImages) {
+    if (!imageUrl || !assetImages || assetImages.length === 0) {
+      return null;
+    }
+
+    // Normalize URLs for comparison (remove query params, fragments)
+    const normalizeUrl = (url) => {
+      try {
+        const parsed = new URL(url, 'http://dummy.com');
+        return parsed.pathname;
+      } catch {
+        // Not a valid URL, just remove query params and fragments manually
+        return url.split('?')[0].split('#')[0];
+      }
+    };
+
+    const normalizedImageUrl = normalizeUrl(imageUrl);
+
+    // Strategy 1: Exact URL match (highest priority)
+    let match = assetImages.find(img =>
+      img.originalUrl === imageUrl || img.absoluteUrl === imageUrl
+    );
+    if (match) return match;
+
+    // Strategy 2: Normalized path match (without query params)
+    match = assetImages.find(img =>
+      normalizeUrl(img.originalUrl) === normalizedImageUrl ||
+      normalizeUrl(img.absoluteUrl) === normalizedImageUrl
+    );
+    if (match) return match;
+
+    // Strategy 3: Filename match (lowest priority, requires exact filename)
+    const getFilename = (url) => {
+      const normalized = normalizeUrl(url);
+      return normalized.split('/').pop() || '';
+    };
+
+    const imageFilename = getFilename(imageUrl);
+    if (imageFilename) {
+      match = assetImages.find(img => {
+        const assetFilename = getFilename(img.originalUrl);
+        // Only match if filenames are identical and non-empty
+        return assetFilename && assetFilename === imageFilename;
+      });
+      if (match) return match;
+    }
+
+    // No match found
+    return null;
   }
 
   // ==================== CENTRALIZED STYLING INFRASTRUCTURE ====================
@@ -901,24 +1134,26 @@ class ElementorConverter {
     if (tagName === 'img') {
       // CRITICAL FIX: Rewrite image URL to use downloaded asset if available
       let imageUrl = attributes.src || '';
+      let assetFound = false;
+
+      // ERROR HANDLING: Wrap asset mapping in try-catch to prevent crashes
       if (imageUrl && this.assetMapping && this.assetMapping.images && this.assetMapping.images.length > 0) {
-        // Find matching downloaded image - try multiple matching strategies
-        const downloadedImage = this.assetMapping.images.find(img => {
-          // Exact match
-          if (img.originalUrl === imageUrl || img.absoluteUrl === imageUrl) return true;
-          // URL path match (for relative URLs)
-          if (imageUrl.includes(img.originalUrl) || img.originalUrl.includes(imageUrl)) return true;
-          // Filename match
-          const imgFilename = imageUrl.split('/').pop().split('?')[0];
-          const assetFilename = img.originalUrl.split('/').pop().split('?')[0];
-          if (imgFilename && assetFilename && imgFilename === assetFilename) return true;
-          return false;
-        });
-        if (downloadedImage && downloadedImage.localUrl) {
-          imageUrl = downloadedImage.localUrl;
-          console.log(`✅ Rewrote image URL: ${attributes.src} → ${imageUrl}`);
-        } else {
-          console.log(`⚠️  No matching asset found for image: ${imageUrl}`);
+        try {
+          // Use precise matching function
+          const downloadedImage = this.findMatchingAsset(imageUrl, this.assetMapping.images);
+
+          if (downloadedImage && downloadedImage.localUrl) {
+            const originalUrl = imageUrl;
+            imageUrl = downloadedImage.localUrl;
+            assetFound = true;
+            console.log(`✅ Rewrote image URL: ${originalUrl} → ${imageUrl}`);
+          } else {
+            console.log(`⚠️  No matching asset found for image: ${imageUrl} (falling back to original URL)`);
+          }
+        } catch (assetError) {
+          console.error(`❌ Asset mapping error for ${imageUrl}:`, assetError.message);
+          console.log(`   Falling back to original URL`);
+          // imageUrl stays as original - graceful degradation
         }
       }
       
@@ -953,23 +1188,13 @@ class ElementorConverter {
         })
       };
     } else if (tagName === 'a') {
-      // CRITICAL FIX: Filter out navigation links - only convert links that are buttons or CTA-like
+      // CRITICAL FIX: Filter out navigation links using precise detection
       const href = attributes.href || '';
-      const isNavigationLink = href && (
-        href.startsWith('#') || 
-        href.startsWith('/') || 
-        href.includes('page') || 
-        href.includes('category') ||
-        href.includes('tag') ||
-        (element.className && (
-          element.className.includes('nav') || 
-          element.className.includes('menu') ||
-          element.className.includes('navigation')
-        ))
-      );
-      
-      // Skip navigation links - convert to text widget instead
-      if (isNavigationLink && !this.isButtonLike(element)) {
+      const isNav = this.isNavigationLink(element);
+      const isButton = this.isButtonLike(element);
+
+      // Navigation links that aren't buttons → convert to text (no href)
+      if (isNav && !isButton) {
         // Convert to text widget without link
         const layout = element.layout || {};
         baseWidget.widgetType = "text-editor";
